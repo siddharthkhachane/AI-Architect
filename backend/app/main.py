@@ -27,6 +27,15 @@ app = FastAPI(
     debug=settings.DEBUG,
 )
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 start_time = time.time()
 
 if settings.ENABLE_RATE_LIMITING:
