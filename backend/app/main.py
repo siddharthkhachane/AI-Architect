@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.v1.endpoints import documents, chat
 from app.models.schemas import HealthCheck, ErrorResponse
+from app.services.llm import OllamaService
+from app.services.document_manager import DocumentManager
 from datetime import datetime
 import logging
 
@@ -42,15 +44,34 @@ app.include_router(
 
 @app.get("/health", response_model=HealthCheck)
 async def health_check():
+    ollama_service = OllamaService()
+    document_manager = DocumentManager()
+    
+    ollama_status = "connected" if await ollama_service.check_health() else "disconnected"
+    
+    try:
+        doc_count = await document_manager.vector_store.get_document_count()
+        chromadb_status = "connected"
+    except:
+        doc_count = 0
+        chromadb_status = "disconnected"
+    
+    services = {
+        "api": "running",
+        "ollama": ollama_status,
+        "chromadb": chromadb_status,
+        "document_count": str(doc_count)
+    }
+    
+    overall_status = "healthy" if all(
+        status in ["running", "connected"] for status in [services["api"], services["ollama"], services["chromadb"]]
+    ) else "degraded"
+    
     return HealthCheck(
-        status="healthy",
+        status=overall_status,
         timestamp=datetime.utcnow(),
         version=settings.VERSION,
-        services={
-            "api": "running",
-            "ollama": "checking...",
-            "chromadb": "checking..."
-        }
+        services=services
     )
 
 @app.get("/")
@@ -59,7 +80,15 @@ async def root():
         "message": f"Welcome to {settings.PROJECT_NAME}",
         "version": settings.VERSION,
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "features": [
+            "Document upload and processing (PDF, Markdown, Code)",
+            "Repository processing via Git clone",
+            "RAG-powered Q&A with source citations",
+            "Conversation management",
+            "Document summarization",
+            "Real-time streaming responses"
+        ]
     }
 
 @app.exception_handler(Exception)
