@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 import os
 
 class Settings(BaseSettings):
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     
     MAX_FILE_SIZE: int = 50 * 1024 * 1024
     UPLOAD_DIR: str = "./uploads"
-    ALLOWED_EXTENSIONS: set[str] = {".pdf", ".md", ".txt", ".py", ".js", ".tsx", ".jsx"}
+    ALLOWED_EXTENSIONS: set[str] = {".pdf", ".md", ".txt", ".py", ".js", ".tsx", ".jsx", ".java", ".cpp", ".go", ".rs"}
     
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "mistral"
@@ -41,6 +41,22 @@ class Settings(BaseSettings):
     MAX_CONTEXT_LENGTH: int = 4000
     TOP_K_RESULTS: int = 5
     SIMILARITY_THRESHOLD: float = 0.7
+    
+    ENABLE_RATE_LIMITING: bool = True
+    RATE_LIMIT_CALLS: int = 100
+    RATE_LIMIT_PERIOD: int = 60
+    
+    ENABLE_METRICS: bool = True
+    METRICS_RETENTION_DAYS: int = 30
+    
+    MAX_CONVERSATIONS_PER_USER: int = 50
+    MAX_CONVERSATION_LENGTH: int = 100
+    
+    ENABLE_DOCUMENT_VALIDATION: bool = True
+    MAX_DOCUMENTS_PER_USER: int = 100
+    
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: Optional[str] = None
     
     class Config:
         env_file = ".env"

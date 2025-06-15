@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
-from app.models.schemas import ChatRequest, ChatResponse
+from app.models.schemas import (
+    ChatRequest, ChatResponse, ConversationSummary, ConversationDetail
+)
 from app.core.deps import get_settings
 from app.services.document_manager import DocumentManager
 from app.services.llm import RAGService
 from app.services.conversation_manager import ConversationManager
+from app.services.metrics import metrics_service
 import uuid
 import json
 import asyncio
@@ -14,14 +17,9 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-class ConversationResponse(BaseModel):
-    id: str
-    created_at: str
-    updated_at: str
-    message_count: int
-
 class DocumentSummaryRequest(BaseModel):
     document_id: str
+    summary_type: str = "comprehensive"
 
 document_manager = DocumentManager()
 conversation_manager = ConversationManager()
@@ -37,6 +35,7 @@ async def chat(
     background_tasks: BackgroundTasks,
     settings = Depends(get_settings)
 ):
+    start_time = datetime.utcnow()
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
     try:
@@ -53,23 +52,31 @@ async def chat(
         result = await rag_service.generate_answer(
             query=request.message,
             conversation_history=conversation_history,
+            document_ids=request.document_ids,
             include_sources=request.include_sources,
             max_sources=request.max_sources
         )
         
         background_tasks.add_task(
-            save_conversation_messages,
+            save_conversation_with_metrics,
             conversation_id,
             request.message,
-            result["response"]
+            result["response"],
+            len(request.message),
+            len(result["response"]),
+            result["processing_time"],
+            len(result["sources"])
         )
+        
+        processing_time = (datetime.utcnow() - start_time).total_seconds()
         
         return ChatResponse(
             response=result["response"],
             conversation_id=conversation_id,
             sources=result["sources"],
-            processing_time=result["processing_time"],
-            model_used=result["model_used"]
+            processing_time=processing_time,
+            model_used=result["model_used"],
+            context_length=len(str(result.get("context", "")))
         )
         
     except Exception as e:
@@ -93,20 +100,28 @@ async def chat_stream(request: ChatRequest):
         async def generate_stream():
             try:
                 collected_response = ""
+                sources_count = 0
                 
                 async for chunk in rag_service.generate_streaming_answer(
                     query=request.message,
-                    conversation_history=conversation_history
+                    conversation_history=conversation_history,
+                    document_ids=request.document_ids
                 ):
                     if chunk["type"] == "content":
                         collected_response += chunk["data"]
+                    elif chunk["type"] == "sources":
+                        sources_count = len(chunk["data"])
                     
                     yield f"data: {json.dumps(chunk)}\n\n"
                 
-                await save_conversation_messages(
+                await save_conversation_with_metrics(
                     conversation_id,
                     request.message,
-                    collected_response
+                    collected_response,
+                    len(request.message),
+                    len(collected_response),
+                    0.0,
+                    sources_count
                 )
                 
                 yield f"data: {json.dumps({'type': 'done', 'conversation_id': conversation_id})}\n\n"
@@ -132,17 +147,47 @@ async def chat_stream(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Streaming chat failed: {str(e)}")
 
-@router.get("/conversations", response_model=List[ConversationResponse])
-async def list_conversations():
+@router.get("/conversations", response_model=List[ConversationSummary])
+async def list_conversations(
+    limit: int = 50,
+    offset: int = 0
+):
     conversations = await conversation_manager.list_conversations()
-    return [ConversationResponse(**conv) for conv in conversations]
+    
+    summaries = []
+    for conv in conversations[offset:offset + limit]:
+        conversation_detail = await conversation_manager.get_conversation(conv["id"])
+        
+        last_message = None
+        title = None
+        
+        if conversation_detail and conversation_detail["messages"]:
+            last_user_message = next(
+                (msg for msg in reversed(conversation_detail["messages"]) if msg["role"] == "user"),
+                None
+            )
+            if last_user_message:
+                last_message = last_user_message["content"][:100] + "..." if len(last_user_message["content"]) > 100 else last_user_message["content"]
+                title = last_user_message["content"][:50] + "..." if len(last_user_message["content"]) > 50 else last_user_message["content"]
+        
+        summaries.append(ConversationSummary(
+            id=conv["id"],
+            created_at=conv["created_at"],
+            updated_at=conv["updated_at"],
+            message_count=conv["message_count"],
+            last_message_preview=last_message,
+            title=title
+        ))
+    
+    return summaries
 
-@router.get("/conversations/{conversation_id}")
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
 async def get_conversation(conversation_id: str):
     conversation = await conversation_manager.get_conversation(conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    return conversation
+    
+    return ConversationDetail(**conversation)
 
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str):
@@ -170,6 +215,7 @@ async def summarize_document(request: DocumentSummaryRequest):
             "document_id": request.document_id,
             "document_title": document.title,
             "summary": summary,
+            "summary_type": request.summary_type,
             "generated_at": datetime.utcnow().isoformat()
         }
         
@@ -189,9 +235,24 @@ async def chat_health():
         "timestamp": datetime.utcnow().isoformat()
     }
 
-async def save_conversation_messages(conversation_id: str, user_message: str, assistant_response: str):
+async def save_conversation_with_metrics(
+    conversation_id: str, 
+    user_message: str, 
+    assistant_response: str, 
+    query_length: int,
+    response_length: int,
+    processing_time: float,
+    sources_found: int
+):
     try:
         await conversation_manager.add_message(conversation_id, "user", user_message)
         await conversation_manager.add_message(conversation_id, "assistant", assistant_response)
+        
+        await metrics_service.record_chat_interaction(
+            query_length=query_length,
+            response_length=response_length,
+            processing_time=processing_time,
+            sources_found=sources_found
+        )
     except Exception as e:
         print(f"Error saving conversation: {str(e)}")
