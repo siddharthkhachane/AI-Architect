@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Knowledge Assistant</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-brain"></i> RAG Assistant</h1>
+                <div class="header-info">
+                    <span class="user">👋 siddharthkhachane</span>
+                    <div class="status" id="status">
+                        <i class="fas fa-circle"></i> Connecting...
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="upload-section">
+                    <h3><i class="fas fa-upload"></i> Upload Documents</h3>
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Drop files here or click to upload</p>
+                        <p class="file-types">Supports: .txt, .md, .pdf</p>
+                        <input type="file" id="fileInput" multiple accept=".txt,.md,.pdf">
+                    </div>
+                </div>
+
+                <div class="documents-section">
+                    <h3><i class="fas fa-file-alt"></i> Your Documents</h3>
+                    <div class="documents-list" id="documentsList">
+                        <!-- Documents will be loaded here -->
+                    </div>
+                </div>
+
+                <div class="stats-section">
+                    <h3><i class="fas fa-chart-bar"></i> Stats</h3>
+                    <div class="stats" id="stats">
+                        <div class="stat">
+                            <span class="stat-number" id="docCount">0</span>
+                            <span class="stat-label">Documents</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-number" id="chunkCount">0</span>
+                            <span class="stat-label">Chunks</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Area -->
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h2><i class="fas fa-comments"></i> Chat with Your Knowledge Base</h2>
+                    <button class="clear-chat" id="clearChat">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-message">
+                        <div class="bot-message">
+                            <div class="message-avatar">🤖</div>
+                            <div class="message-content">
+                                <p>👋 Hi! I'm your RAG Assistant. Upload some documents and ask me questions about them!</p>
+                                <div class="suggestions">
+                                    <p>Try asking:</p>
+                                    <div class="suggestion-chips">
+                                        <span class="chip" onclick="sendSuggestion('What is machine learning?')">What is machine learning?</span>
+                                        <span class="chip" onclick="sendSuggestion('Summarize the key concepts')">Summarize the key concepts</span>
+                                        <span class="chip" onclick="sendSuggestion('What are the main topics?')">What are the main topics?</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="Ask a question about your documents...">
+                        <button id="sendButton">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="input-hints">
+                        <span class="hint">💡 Press Enter to send</span>
+                        <span class="hint">📄 <span id="sourceCount">0</span> sources available</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-spinner">
+                <i class="fas fa-brain fa-spin"></i>
+                <p>Thinking...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
