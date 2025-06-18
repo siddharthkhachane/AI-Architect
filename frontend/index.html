@@ -3,59 +3,132 @@
 <head>
   <meta charset="UTF-8" />
   <title>RAG Assistant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: sans-serif;
-      background: #eef2ff;
       margin: 0;
       padding: 0;
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(to right, #a18cd1, #fbc2eb);
+      color: #333;
       display: flex;
       height: 100vh;
     }
-    #sidebar {
+
+    aside {
       width: 300px;
-      background: #4f46e5;
-      color: white;
-      padding: 20px;
+      padding: 1.5rem;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      border-right: 1px solid #ddd;
     }
-    #main {
+
+    main {
       flex: 1;
-      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem;
     }
-    button, input {
-      margin-top: 10px;
-      padding: 10px;
-      font-size: 14px;
+
+    h2 {
+      margin: 0;
+      font-size: 1.5rem;
+      color: #4f46e5;
     }
+
+    h3 {
+      margin-bottom: 1rem;
+    }
+
+    input[type="text"], input[type="file"] {
+      padding: 0.5rem;
+      font-size: 0.95rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      width: 100%;
+    }
+
+    button {
+      padding: 0.6rem;
+      background-color: #4f46e5;
+      color: white;
+      font-weight: 600;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background-color: #4338ca;
+    }
+
     .log {
-      margin-top: 20px;
-      background: white;
-      padding: 10px;
-      height: 300px;
-      overflow: auto;
+      background: #f8f8ff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .message {
+      max-width: 70%;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      font-size: 0.95rem;
+    }
+
+    .user {
+      align-self: flex-end;
+      background-color: #e0e7ff;
+      color: #111;
+    }
+
+    .bot {
+      align-self: flex-start;
+      background-color: #f1f5f9;
+      color: #111;
     }
   </style>
 </head>
 <body>
-  <div id="sidebar">
+  <aside>
     <h2>RAG Assistant</h2>
-    <input id="repoUrl" type="text" placeholder="GitHub repo URL" style="width: 100%;" />
+    <input id="repoUrl" type="text" placeholder="GitHub repo URL" />
     <button onclick="cloneRepo()">Clone Repo</button>
-    <br/><br/>
+
     <input type="file" id="zipFile" />
     <button onclick="uploadZip()">Upload ZIP</button>
-    <br/><br/>
-    <input id="question" type="text" placeholder="Ask a question..." style="width: 100%;" />
+
+    <input id="question" type="text" placeholder="Ask a question..." />
     <button onclick="ask()">Ask</button>
-  </div>
-  <div id="main">
+  </aside>
+
+  <main>
     <h3>Chat</h3>
     <div class="log" id="log"></div>
-  </div>
+  </main>
 
   <script>
-    function log(message) {
-      document.getElementById("log").innerHTML += `<div>${message}</div>`;
+    function logChat(role, message) {
+      const logBox = document.getElementById("log");
+      const div = document.createElement("div");
+      div.className = `message ${role}`;
+      div.innerText = message;
+      logBox.appendChild(div);
+      logBox.scrollTop = logBox.scrollHeight; // Auto-scroll to latest
     }
 
     async function cloneRepo() {
@@ -66,7 +139,7 @@
         body: JSON.stringify({ url })
       });
       const data = await res.json();
-      log(`✅ ${data.message}`);
+      logChat("bot", `✅ ${data.message}`);
     }
 
     async function uploadZip() {
@@ -78,18 +151,20 @@
         body: formData
       });
       const data = await res.json();
-      log(`✅ ${data.message}`);
+      logChat("bot", `✅ ${data.message}`);
     }
 
     async function ask() {
       const question = document.getElementById("question").value;
+      if (!question.trim()) return;
+      logChat("user", question);
       const res = await fetch("http://localhost:8000/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: question })
       });
       const data = await res.json();
-      log(`<strong>Q:</strong> ${question}<br><strong>A:</strong> ${data.result}`);
+      logChat("bot", data.result);
     }
   </script>
 </body>
