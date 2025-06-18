@@ -27,6 +27,11 @@ class RepoInput(BaseModel):
 DB_PATH = "./vector_store"
 WORK_DIR = "./repos"
 os.makedirs(WORK_DIR, exist_ok=True)
+os.makedirs(DB_PATH, exist_ok=True)
+
+vector_store = None
+qa_chain = None
+llm = ChatOllama(model="llama3.1:8b", temperature=0)
 
 def load_docs(path):
     allowed = [".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".md", ".java", ".c", ".cpp", ".h", ".hpp", ".go", ".rs", ".swift", ".kt"]
@@ -49,41 +54,34 @@ def rebuild_vector_store():
         for d in dirs:
             docs = load_docs(os.path.join(root, d))
             all_docs.extend(docs)
+    if not all_docs:
+        print("❌ No documents found.")
+        return None
     splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=300)
     chunks = splitter.split_documents(all_docs)
-    print(f"✅ Split into {len(chunks)} chunks")
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_store = FAISS.from_documents(chunks, embeddings)
-    vector_store.save_local(DB_PATH)
-    return vector_store
-
-if os.path.exists(DB_PATH):
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_store = FAISS.load_local(DB_PATH, embeddings, allow_dangerous_deserialization=True)
-else:
-    vector_store = rebuild_vector_store()
-
-llm = ChatOllama(model="llama3.1:8b", temperature=0)
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
-    return_source_documents=True
-)
+    if not chunks:
+        print("❌ No chunks created.")
+        return None
+    print(f"✅ Total Chunks: {len(chunks)}")
+    try:
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        vector_store = FAISS.from_documents(chunks, embeddings)
+        vector_store.save_local(DB_PATH)
+        return vector_store
+    except Exception as e:
+        print(f"❌ Vector store build failed: {e}")
+        return None
 
 @app.post("/ask")
 async def ask_question(input: QueryInput):
-    print(f"\n🔍 Query: {input.query}")
-    retrieved = vector_store.similarity_search(input.query, k=5)
-    print(f"🔎 Retrieved {len(retrieved)} chunks")
-    for i, doc in enumerate(retrieved):
-        filename = doc.metadata.get('source', 'unknown')
-        print(f"[{i+1}] {filename}:\n{doc.page_content[:200].strip()}...\n---")
+    if not vector_store or not qa_chain:
+        return {"result": "❌ Upload a repo or zip file first."}
     result = qa_chain.invoke({"query": input.query})
     return {"result": result["result"]}
 
 @app.post("/upload_zip")
 async def upload_zip(file: UploadFile = File(...)):
+    global vector_store, qa_chain
     contents = await file.read()
     zip_path = os.path.join(WORK_DIR, file.filename)
     with open(zip_path, "wb") as f:
@@ -92,18 +90,14 @@ async def upload_zip(file: UploadFile = File(...)):
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(extract_path)
     os.remove(zip_path)
-    global vector_store, qa_chain
     vector_store = rebuild_vector_store()
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
-        return_source_documents=True
-    )
+    if vector_store:
+        qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vector_store.as_retriever(search_kwargs={"k": 5}), return_source_documents=True)
     return {"message": "ZIP uploaded and processed."}
 
 @app.post("/clone_repo")
 async def clone_repo(repo: RepoInput):
+    global vector_store, qa_chain
     folder_name = repo.url.rstrip("/").split("/")[-1]
     dest = os.path.join(WORK_DIR, folder_name)
     if os.path.exists(dest):
@@ -112,14 +106,9 @@ async def clone_repo(repo: RepoInput):
             func(path)
         shutil.rmtree(dest, onerror=on_rm_error)
     git.Repo.clone_from(repo.url, dest)
-    global vector_store, qa_chain
     vector_store = rebuild_vector_store()
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
-        return_source_documents=True
-    )
+    if vector_store:
+        qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vector_store.as_retriever(search_kwargs={"k": 5}), return_source_documents=True)
     return {"message": "Repository cloned and processed."}
 
 @app.get("/health")
@@ -130,8 +119,5 @@ def health_check():
 async def catch_unknown_routes(request: Request, call_next):
     response = await call_next(request)
     if response.status_code == 404:
-        return JSONResponse(
-            content={"detail": f"Path {request.url.path} not found."},
-            status_code=404
-        )
+        return JSONResponse(content={"detail": f"Path {request.url.path} not found."}, status_code=404)
     return response
