@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
+
 from langchain_community.vectorstores import FAISS
+from langchain.vectorstores import FAISS as BaseFAISS 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.document_loaders import TextLoader
 from langchain_ollama.chat_models import ChatOllama
@@ -16,7 +18,13 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 class QueryInput(BaseModel):
     query: str
@@ -92,7 +100,12 @@ async def upload_zip(file: UploadFile = File(...)):
     os.remove(zip_path)
     vector_store = rebuild_vector_store()
     if vector_store:
-        qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vector_store.as_retriever(search_kwargs={"k": 5}), return_source_documents=True)
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+            return_source_documents=True
+        )
     return {"message": "ZIP uploaded and processed."}
 
 @app.post("/clone_repo")
@@ -108,7 +121,12 @@ async def clone_repo(repo: RepoInput):
     git.Repo.clone_from(repo.url, dest)
     vector_store = rebuild_vector_store()
     if vector_store:
-        qa_chain = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=vector_store.as_retriever(search_kwargs={"k": 5}), return_source_documents=True)
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+            return_source_documents=True
+        )
     return {"message": "Repository cloned and processed."}
 
 @app.get("/health")
@@ -121,3 +139,19 @@ async def catch_unknown_routes(request: Request, call_next):
     if response.status_code == 404:
         return JSONResponse(content={"detail": f"Path {request.url.path} not found."}, status_code=404)
     return response
+
+try:
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    if os.path.exists(DB_PATH):
+        vector_store = BaseFAISS.load_local(DB_PATH, embeddings)
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+            return_source_documents=True
+        )
+        print("✅ Vector store loaded from disk.")
+    else:
+        print("ℹ️ No existing vector store found.")
+except Exception as e:
+    print(f"❌ Failed to load vector store on startup: {e}")
